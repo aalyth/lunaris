@@ -78,4 +78,3 @@ cargo run --bin lunaris-client
 ## License
 
 GNU GPL v3.0
->>>>>>> 5476fe0af4d02302d43477796f15625c9887baf7
