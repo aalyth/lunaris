@@ -1,9 +1,4 @@
-//! # VM — executes a compiled bytecode program
-//!
-//! The VM holds a program counter, a register file, and open cursors.
-//! It steps through instructions one at a time, reading/writing the
-//! B-tree via cursors and accumulating SELECT results.
-
+use crate::constants::VM_STARTING_REGISTERS;
 use crate::database::Database;
 use crate::error::{LunarisError, LunarisResult};
 use crate::storage::cursor::Cursor;
@@ -16,7 +11,6 @@ use std::collections::HashMap;
 struct RuntimeCursor {
     table_name: String,
     cursor: Cursor,
-    writable: bool,
 }
 
 /// Lunaris virtual machine - the core component, executing query logic.
@@ -41,7 +35,7 @@ impl Lvm {
         Self {
             pc: 0,
             halted: false,
-            registers: vec![Value::Null; 64],
+            registers: vec![Value::Null; VM_STARTING_REGISTERS],
             cursors: HashMap::new(),
             result_rows: Vec::new(),
             record_buffer: Vec::new(),
@@ -52,7 +46,7 @@ impl Lvm {
 
     pub fn execute(mut self, db: &Database, program: &Program) -> LunarisResult<ExecutionResult> {
         loop {
-            if self.pc >= program.instructions.len() {
+            if self.pc >= program.instructions.len() || self.halted {
                 break;
             }
 
@@ -86,11 +80,11 @@ impl Lvm {
             Instruction::Halt => self.halted = true,
 
             Instruction::OpenReadCursor { cursor, table } => {
-                self.open_cursor(*cursor, table, false, db)?
+                self.open_cursor(*cursor, table, db)?
             }
 
             Instruction::OpenReadWriteCursor { cursor, table } => {
-                self.open_cursor(*cursor, table, true, db)?
+                self.open_cursor(*cursor, table, db)?
             }
 
             Instruction::RewindCursor {
@@ -271,19 +265,12 @@ impl Lvm {
         Ok(())
     }
 
-    fn open_cursor(
-        &mut self,
-        cursor: i32,
-        table_name: &str,
-        writable: bool,
-        db: &Database,
-    ) -> LunarisResult<()> {
+    fn open_cursor(&mut self, cursor: i32, table_name: &str, db: &Database) -> LunarisResult<()> {
         self.cursors.insert(
             cursor,
             RuntimeCursor {
                 table_name: table_name.to_owned(),
                 cursor: Cursor::new(db.get_schema(table_name)?),
-                writable,
             },
         );
         Ok(())

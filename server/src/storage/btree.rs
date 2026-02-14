@@ -1,24 +1,3 @@
-//! # B-tree — multi-page sorted key-value store
-//!
-//! Builds on top of `page.rs` (single-page operations) and `pager.rs` (file I/O)
-//! to provide a sorted, persistent key→row mapping.
-//!
-//! ## Tree structure
-//!
-//! - **Leaf pages** hold actual rows: `[row_id → serialized row data]`
-//! - **Interior pages** hold separator keys + child pointers to guide searches
-//! - The root can be either a leaf (small table) or interior (after splits)
-//!
-//! ## Key operations
-//!
-//! - **Insert:** descend from root → find target leaf → insert cell. If the
-//!   leaf is full, split it: allocate a sibling, divide cells at the midpoint,
-//!   push the median key up into the parent. The parent may also split.
-//! - **Search:** descend via binary search on interior separator keys → binary
-//!   search within the target leaf.
-//! - **Delete:** find leaf → remove cell. No rebalancing (underfull pages tolerated).
-//! - **Scan:** see `cursor.rs` — walk the leaf linked list via `right_pointer`.
-
 use std::path::Path;
 
 use crate::error::{LunarisError, LunarisResult};

@@ -42,6 +42,12 @@ impl Catalog {
             .ok_or_else(|| LunarisError::TableNotFound(table_name.to_string()))
     }
 
+    pub fn table_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.schemas.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
     pub fn table_exists(&self, table_name: &str) -> bool {
         self.schemas.contains_key(table_name)
     }

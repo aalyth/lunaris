@@ -6,6 +6,7 @@ use crate::vm::compiler;
 use crate::vm::parser;
 use crate::vm::vm::{ExecutionResult, Lvm};
 use lunaris_common::value::Value;
+use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
@@ -33,11 +34,33 @@ impl Database {
 
     pub fn execute_sql(&self, sql: &str) -> LunarisResult<ExecutionResult> {
         let stmt = parser::parse_sql(sql)?;
+
+        if matches!(stmt, Statement::ShowTables { .. }) {
+            return self.execute_show_tables();
+        }
+
         let catalog = self.catalog.read().unwrap();
         let program = compiler::compile(&stmt, &catalog)?;
         drop(catalog);
 
         Lvm::new().execute(self, &program)
+    }
+
+    fn execute_show_tables(&self) -> LunarisResult<ExecutionResult> {
+        let catalog = self.catalog.read().unwrap();
+        let names = catalog.table_names();
+        let row_count = names.len();
+        let rows: Vec<Vec<Value>> = names
+            .into_iter()
+            .map(|name| vec![Value::Text(name)])
+            .collect();
+
+        Ok(ExecutionResult {
+            columns: vec!["table_name".to_string()],
+            rows,
+            rows_affected: 0,
+            message: format!("{row_count} table(s)"),
+        })
     }
 
     pub fn get_schema(&self, table_name: &str) -> LunarisResult<TableSchema> {

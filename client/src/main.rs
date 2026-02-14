@@ -2,6 +2,7 @@ use std::process;
 
 use comfy_table::{ContentArrangement, Table};
 use rustyline::error::ReadlineError;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 
 use lunaris_common::protocol::{self, Request, Response};
@@ -15,10 +16,10 @@ const SERVER_ADDR_ENV_VAR: &str = "SERVER_ADDR";
 async fn main() -> anyhow::Result<()> {
     let server_addr = std::env::var(SERVER_ADDR_ENV_VAR).unwrap_or(DEFAULT_SERVER_ADDR.to_string());
 
-    let stream = match TcpStream::connect(server_addr).await {
+    let stream = match TcpStream::connect(&server_addr).await {
         Ok(s) => s,
         Err(err) => {
-            eprintln!("Failed to connect to {DEFAULT_SERVER_ADDR}: {err}");
+            eprintln!("Failed to connect to {server_addr}: {err}");
             eprintln!("Is the server running? Start it with: cargo run -p server");
             process::exit(1);
         }
@@ -26,7 +27,40 @@ async fn main() -> anyhow::Result<()> {
 
     let (mut reader, mut writer) = stream.into_split();
 
-    println!("Connected to Lunaris at {DEFAULT_SERVER_ADDR}");
+    if let Some(path) = std::env::args().nth(1) {
+        run_script(&path, &mut reader, &mut writer).await
+    } else {
+        run_repl(&server_addr, &mut reader, &mut writer).await
+    }
+}
+
+async fn run_script(
+    path: &str,
+    reader: &mut OwnedReadHalf,
+    writer: &mut OwnedWriteHalf,
+) -> anyhow::Result<()> {
+    let contents = std::fs::read_to_string(path)?;
+
+    for stmt in contents.split(';') {
+        let trimmed = stmt.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Err(e) = send_and_display(trimmed, reader, writer).await {
+            eprintln!("Error: {e}");
+            process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_repl(
+    server_addr: &str,
+    reader: &mut OwnedReadHalf,
+    writer: &mut OwnedWriteHalf,
+) -> anyhow::Result<()> {
+    println!("Connected to Lunaris at {server_addr}");
     println!("Type SQL statements, or 'exit' to quit.\n");
 
     let mut rl = rustyline::DefaultEditor::new()?;
@@ -54,32 +88,37 @@ async fn main() -> anyhow::Result<()> {
 
         rl.add_history_entry(&line)?;
 
-        let request = Request {
-            sql: trimmed.to_string(),
-        };
-        if let Err(err) = protocol::send_message(&mut writer, &request).await {
-            eprintln!("Send error: {err}");
+        if let Err(e) = send_and_display(trimmed, reader, writer).await {
+            eprintln!("Error: {e}");
             break;
         }
+    }
 
-        match protocol::recv_message::<Response, _>(&mut reader).await {
-            Ok(Some(Response::Ok(result))) => {
-                if let Some(rs) = result.result_set {
-                    print_result_set(&rs.columns, &rs.rows);
-                }
-                println!("{}", result.message);
+    Ok(())
+}
+
+async fn send_and_display(
+    sql: &str,
+    reader: &mut OwnedReadHalf,
+    writer: &mut OwnedWriteHalf,
+) -> anyhow::Result<()> {
+    let request = Request {
+        sql: sql.to_string(),
+    };
+    protocol::send_message(writer, &request).await?;
+
+    match protocol::recv_message::<Response, _>(reader).await? {
+        Some(Response::Ok(result)) => {
+            if let Some(rs) = result.result_set {
+                print_result_set(&rs.columns, &rs.rows);
             }
-            Ok(Some(Response::Error { message })) => {
-                eprintln!("Error: {message}");
-            }
-            Ok(None) => {
-                eprintln!("Server closed connection.");
-                break;
-            }
-            Err(e) => {
-                eprintln!("Receive error: {e}");
-                break;
-            }
+            println!("{}", result.message);
+        }
+        Some(Response::Error { message }) => {
+            eprintln!("Error: {message}");
+        }
+        None => {
+            anyhow::bail!("Server closed connection.");
         }
     }
 

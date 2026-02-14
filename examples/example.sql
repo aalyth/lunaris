@@ -74,9 +74,6 @@ SELECT * FROM products WHERE in_stock = TRUE AND price < 100.0;
 SELECT * FROM users WHERE age < 20 OR age > 40;
 SELECT * FROM users WHERE balance < 0.0 OR balance > 5000.0;
 
-SELECT * FROM users WHERE (age > 30 AND active = TRUE) OR balance > 1000.0;
-SELECT * FROM products WHERE (price < 50.0 AND in_stock = TRUE) OR quantity = 0;
-
 SELECT * FROM users WHERE balance > -100.0;
 
 SELECT * FROM products WHERE price > 50;
